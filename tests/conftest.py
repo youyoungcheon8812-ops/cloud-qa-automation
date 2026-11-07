@@ -1,4 +1,9 @@
-"""공통 fixture: 테스트용 서버 기동, API 클라이언트, 테스트 간 상태 초기화."""
+"""공통 fixture: 테스트용 서버 기동, API 클라이언트, 테스트 간 상태 초기화.
+
+BASE_URL 환경변수가 있으면 이미 떠 있는 서버(예: Docker 컨테이너)를 대상으로 테스트하고,
+없으면 테스트 프로세스 안에서 서버를 직접 띄운다.
+"""
+import os
 import socket
 import threading
 import time
@@ -19,6 +24,10 @@ def _free_port() -> int:
 @pytest.fixture(scope="session")
 def base_url() -> str:
     """세션 동안 실제 HTTP 서버를 백그라운드로 띄운다 (API·UI 테스트 공용)."""
+    external = os.environ.get("BASE_URL")
+    if external:
+        yield external.rstrip("/")
+        return
     port = _free_port()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
