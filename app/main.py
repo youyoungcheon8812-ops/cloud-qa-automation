@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
@@ -26,7 +26,7 @@ MAX_HOURS = 744          # 31일 * 24시간
 NAME_PATTERN = re.compile(r"^[a-z0-9-]{1,32}$")
 
 
-class Status(str, Enum):
+class Status(StrEnum):
     RUNNING = "RUNNING"
     STOPPED = "STOPPED"
 
