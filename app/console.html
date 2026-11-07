@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Mini Cloud Console</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 32px auto; color: #222; }
+  h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 32px; }
+  form, .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input, select, button { padding: 6px 10px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
+  .error { color: #c62828; min-height: 20px; margin-top: 6px; }
+  .badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .RUNNING { background: #e5f4e4; } .STOPPED { background: #f0efec; }
+</style>
+</head>
+<body>
+<h1>Mini Cloud Console</h1>
+
+<h2>인스턴스 생성</h2>
+<form id="create-form">
+  <input id="name" placeholder="인스턴스 이름" aria-label="인스턴스 이름">
+  <select id="flavor" aria-label="인스턴스 타입">
+    <option value="m2.c1m2">m2.c1m2 (30원/h)</option>
+    <option value="m2.c2m4">m2.c2m4 (60원/h)</option>
+    <option value="m2.c4m8">m2.c4m8 (120원/h)</option>
+    <option value="g2.a100">g2.a100 (2,500원/h)</option>
+  </select>
+  <button type="submit">생성</button>
+</form>
+<div class="error" id="create-error" role="alert"></div>
+
+<h2>인스턴스 목록</h2>
+<table>
+  <thead><tr><th>이름</th><th>타입</th><th>상태</th><th>동작</th></tr></thead>
+  <tbody id="instances"></tbody>
+</table>
+<p id="empty">인스턴스가 없습니다.</p>
+
+<h2>요금 계산기</h2>
+<div class="row">
+  <select id="bill-flavor" aria-label="요금 계산 타입">
+    <option value="m2.c1m2">m2.c1m2</option>
+    <option value="m2.c2m4">m2.c2m4</option>
+    <option value="m2.c4m8">m2.c4m8</option>
+    <option value="g2.a100">g2.a100</option>
+  </select>
+  <input id="bill-hours" type="number" placeholder="사용 시간" aria-label="사용 시간">
+  <button id="bill-btn">계산</button>
+</div>
+<p id="bill-result" data-testid="bill-result"></p>
+<div class="error" id="bill-error" role="alert"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const msg = (body) => Array.isArray(body.detail)
+  ? body.detail.map(d => d.msg.replace(/^Value error, /, "")).join(", ")
+  : body.detail;
+
+async function refresh() {
+  const res = await fetch("/api/instances");
+  const list = await res.json();
+  $("empty").style.display = list.length ? "none" : "block";
+  $("instances").innerHTML = list.map(i => `
+    <tr data-name="${i.name}">
+      <td>${i.name}</td><td>${i.flavor}</td>
+      <td><span class="badge ${i.status}" data-testid="status">${i.status}</span></td>
+      <td>
+        <button data-act="${i.status === "RUNNING" ? "stop" : "start"}" data-id="${i.id}">
+          ${i.status === "RUNNING" ? "정지" : "시작"}</button>
+        <button data-act="delete" data-id="${i.id}">삭제</button>
+      </td>
+    </tr>`).join("");
+}
+
+$("create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("create-error").textContent = "";
+  const res = await fetch("/api/instances", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({name: $("name").value, flavor: $("flavor").value}),
+  });
+  if (!res.ok) { $("create-error").textContent = msg(await res.json()); return; }
+  $("name").value = "";
+  refresh();
+});
+
+$("instances").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  const {act, id} = btn.dataset;
+  if (act === "delete") await fetch(`/api/instances/${id}`, {method: "DELETE"});
+  else await fetch(`/api/instances/${id}/${act}`, {method: "POST"});
+  refresh();
+});
+
+$("bill-btn").addEventListener("click", async () => {
+  $("bill-error").textContent = ""; $("bill-result").textContent = "";
+  const res = await fetch("/api/billing/estimate", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({flavor: $("bill-flavor").value, hours: Number($("bill-hours").value)}),
+  });
+  const body = await res.json();
+  if (!res.ok) { $("bill-error").textContent = "사용 시간은 0~744 사이여야 합니다."; return; }
+  $("bill-result").textContent = `예상 요금: ${body.amount.toLocaleString()}원 (과금 ${body.billable_hours}시간)`;
+});
+
+refresh();
+</script>
+</body>
+</html>
