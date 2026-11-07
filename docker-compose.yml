@@ -1,0 +1,6 @@
+services:
+  console:
+    build: .
+    image: mini-cloud-console
+    ports:
+      - "8000:8000"
