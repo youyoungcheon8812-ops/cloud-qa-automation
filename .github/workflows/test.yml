@@ -111,7 +111,7 @@ jobs:
           mkdir -p reports
           find artifacts -name '*.junit.xml' -exec cp {} reports/ \;
           find artifacts -name 'coverage.xml' -exec cp {} reports/ \;
-      - name: Build quality report (gate: pass rate 100%, coverage 90%)
+      - name: "Build quality report (gate: pass rate 100%, coverage 90%)"
         run: python scripts/quality_report.py reports --summary "$GITHUB_STEP_SUMMARY" --min-pass-rate 100 --min-coverage 90
       - uses: actions/upload-artifact@v4
         if: always()
