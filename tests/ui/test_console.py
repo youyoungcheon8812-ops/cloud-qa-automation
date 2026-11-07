@@ -39,6 +39,8 @@ def test_invalid_name_shows_error(console: Page):
 
 def test_duplicate_name_shows_error(console: Page):
     create_via_ui(console, "dup")
+    # 첫 생성이 끝나 목록에 나타날 때까지 기다린 뒤 두 번째 생성 (CI에서 발견한 race condition 대응)
+    expect(console.locator("tr[data-name='dup']")).to_be_visible()
     create_via_ui(console, "dup")
     expect(console.locator("#create-error")).to_contain_text("이미 있습니다")
     expect(console.locator("tbody tr")).to_have_count(1)
