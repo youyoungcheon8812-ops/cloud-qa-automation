@@ -1,0 +1,10 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+# E/F: 기본 오류, B: 버그 가능성, S: 보안(bandit), UP: 최신 문법
+select = ["E", "F", "B", "S", "UP"]
+
+[lint.per-file-ignores]
+# 테스트 코드에서는 assert 사용이 정상
+"tests/**" = ["S101"]
