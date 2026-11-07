@@ -7,8 +7,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  api-test:
+  lint:
+    name: 정적 분석 (ruff)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  api-test:
+    name: API 테스트 + 커버리지
+    runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,14 +30,46 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Run API tests
-        run: pytest -m api --html=reports/api-report.html --self-contained-html
+        run: >
+          pytest -m api --cov=app --cov-report=xml:reports/coverage.xml
+          --junitxml=reports/api.junit.xml
+          --html=reports/api-report.html --self-contained-html
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: api-report
           path: reports/
 
+  docker-test:
+    name: Docker 컨테이너 대상 API 테스트
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Start container
+        run: docker compose up -d --build --wait
+      - name: Run API tests against container
+        env:
+          BASE_URL: http://localhost:8000
+        run: pytest -m api --junitxml=reports/docker.junit.xml
+      - name: Container logs
+        if: always()
+        run: docker compose logs
+      - run: docker compose down
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-report
+          path: reports/
+
   ui-test:
+    name: UI 테스트 (Playwright)
     runs-on: ubuntu-latest
     needs: api-test
     steps:
@@ -37,7 +82,8 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - name: Run UI tests
         run: >
-          pytest -m ui --html=reports/ui-report.html --self-contained-html
+          pytest -m ui --junitxml=reports/ui.junit.xml
+          --html=reports/ui-report.html --self-contained-html
           --screenshot only-on-failure --tracing retain-on-failure --output test-results
       - uses: actions/upload-artifact@v4
         if: always()
@@ -46,3 +92,51 @@ jobs:
           path: |
             reports/
             test-results/
+
+  quality-report:
+    name: 품질 지표 리포트
+    runs-on: ubuntu-latest
+    needs: [api-test, docker-test, ui-test]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect reports
+        run: |
+          mkdir -p reports
+          find artifacts -name '*.junit.xml' -exec cp {} reports/ \;
+          find artifacts -name 'coverage.xml' -exec cp {} reports/ \;
+      - name: Build quality report (gate: pass rate 100%, coverage 90%)
+        run: python scripts/quality_report.py reports --summary "$GITHUB_STEP_SUMMARY" --min-pass-rate 100 --min-coverage 90
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-metrics
+          path: reports/quality.json
+
+  sonarcloud:
+    name: SonarCloud 분석
+    runs-on: ubuntu-latest
+    needs: api-test
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Skip notice
+        if: env.SONAR_TOKEN == ''
+        run: echo "SONAR_TOKEN 시크릿이 없어 SonarCloud 분석을 건너뜁니다. README의 설정 방법을 참고하세요."
+      - uses: actions/checkout@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: api-report
+          path: reports
+      - uses: SonarSource/sonarqube-scan-action@v5
+        if: env.SONAR_TOKEN != ''
